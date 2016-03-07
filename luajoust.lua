@@ -60,9 +60,9 @@ local DEBUG_FLAG = 5
 -------------------------
 
 local copyFunctions = {
-  "_VERSION", "assert", "error", "ipairs", "load", "next", "pairs", "pcall",
-  "print", "rawequals", "rawget", "rawlen", "rawset", "require", "select",
-  "tonumber", "type", "xpcall"
+  "_VERSION", "assert", "error", "ipairs", "next", "pairs", "pcall", "print",
+  "rawequals", "rawget", "rawlen", "rawset", "require", "select", "tonumber",
+  "type", "xpcall"
 }
 local copyTables = { "coroutine", "math", "string", "table", "utf8" }
 local safeObjType = { "nil", "string", "boolean" }
