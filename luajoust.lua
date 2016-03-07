@@ -36,6 +36,7 @@ local OP_MINUS   = 1
 local OP_ADVANCE = 2
 local OP_RETREAT = 3
 local OP_TEST    = 4
+local DEBUG_FLAG = 5
 
 -------------------------
 -- Program compilation --
@@ -93,6 +94,7 @@ local function loadLuaJoustLibrary(env)
   env.OP_ADVANCE = OP_ADVANCE
   env.OP_RETREAT = OP_RETREAT
   env.OP_TEST    = OP_TEST
+  env.DEBUG_FLAG = DEBUG_FLAG
 end
 local function buildProgramEnvironment(programName)
   local env = {}
@@ -162,9 +164,16 @@ local RESULT_A_WINS = 1
 local RESULT_TIED   = 0
 local RESULT_B_WINS = -1
 
+local function checkCompile(program)
+  local fn, err = compileProgram(program.name, program.contents)
+  if not fn then
+    fatalerr("Failed to compile file "..program.name..": "..err, program.id)
+  end
+  return fn
+end
 local function runRound(programA, programB, tapeLength, isKettle)
-  programA = coroutine.create(programA)
-  programB = coroutine.create(programB)
+  programA = coroutine.create(checkCompile(programA))
+  programB = coroutine.create(checkCompile(programB))
 
   local kettleV = 1
   if isKettle then kettleV = -1 end
@@ -180,26 +189,29 @@ local function runRound(programA, programB, tapeLength, isKettle)
   local lastZeroA, lastZeroB = false, false
 
   for cycle=1,100000 do
-    local testB = tape[dpB] == 0
+    local testB = tape[dpB] ~= 0
 
-    local statusA, resultA = coroutine_resume(programA, resA)
-    local statusB, resultB = coroutine_resume(programB, resB)
+    local _, resultA, dfA = coroutine_resume(programA, resA)
+    local _, resultB, dfB = coroutine_resume(programB, resB)
     resA, resB = nil
 
-    if statusA then
-          if resultA == OP_PLUS    then tape[dpA] = (tape[dpA] + 1) % 256
-      elseif resultA == OP_MINUS   then tape[dpA] = (tape[dpA] - 1) % 256
-      elseif resultA == OP_ADVANCE then dpA = dpA + 1
-      elseif resultA == OP_RETREAT then dpA = dpA - 1
-      elseif resultA == OP_TEST    then resA = tape[dpA] ~= 0 end
-    end
+        if resultA == OP_PLUS    then tape[dpA] = (tape[dpA] + 1) & 0xFF
+    elseif resultA == OP_MINUS   then tape[dpA] = (tape[dpA] - 1) & 0xFF
+    elseif resultA == OP_ADVANCE then dpA = dpA + 1
+    elseif resultA == OP_RETREAT then dpA = dpA - 1
+    elseif resultA == OP_TEST    then resA = tape[dpA] ~= 0 end
 
-    if statusB then
-          if resultB == OP_PLUS    then tape[dpB] = (tape[dpB] + kettleV) % 256
-      elseif resultB == OP_MINUS   then tape[dpB] = (tape[dpB] - kettleV) % 256
-      elseif resultB == OP_ADVANCE then dpB = dpB - 1
-      elseif resultB == OP_RETREAT then dpB = dpB + 1
-      elseif resultB == OP_TEST    then resB = testB end
+        if resultB == OP_PLUS    then tape[dpB] = (tape[dpB] + kettleV) & 0xFF
+    elseif resultB == OP_MINUS   then tape[dpB] = (tape[dpB] - kettleV) & 0xFF
+    elseif resultB == OP_ADVANCE then dpB = dpB - 1
+    elseif resultB == OP_RETREAT then dpB = dpB + 1
+    elseif resultB == OP_TEST    then resB = testB end
+
+    if dfA == DEBUG_FLAG or dfB == DEBUG_FLAG then
+      io.stderr:write("tape: ")
+      for i=1,tapeLength do io.stderr:write(tape[i].." ") end
+      io.stderr:write("\n")
+      io.stderr:write("dpA = "..dpA..", dpB = "..dpB.."\n")
     end
 
     local isZeroA, isZeroB = tape[1] == 0, tape[tapeLength] == 0
@@ -260,24 +272,30 @@ for i, k in ipairs(programs) do
   local contents = handle:read("a")
   handle:close()
 
-  local fn, err = compileProgram(k, contents)
-  if not fn then
-    fatalerr("Failed to compile file "..k..": "..err, i)
-  end
-
-  programs[i] = { name = k, fn = fn }
+  programs[i] = { name = k, contents = contents, id = i }
+  checkCompile(programs[i])
 end
 
 if #programs == 2 then
-  local score, resultStr = luaJoust(programs[1].fn, programs[2].fn)
+  local score, resultStr = luaJoust(programs[1], programs[2])
   print(resultStr.." "..score)
 else
+  local programScores = {}
+  for i=1,#programs do programScores[i] = 0 end
+
   for idxA=1,#programs do
     for idxB=idxA+1,#programs do
-      local score, resultStr = luaJoust(programs[idxA].fn, programs[idxB].fn)
+      local score, resultStr = luaJoust(programs[idxA], programs[idxB])
       print(programs[idxA].name.." vs "..programs[idxB].name)
       print(resultStr.." "..score)
       print()
+
+      programScores[idxA] = programScores[idxA] + score
+      programScores[idxB] = programScores[idxB] - score
     end
+  end
+
+  for i=1,#programs do
+    print(programs[i].name..": "..programScores[i])
   end
 end
