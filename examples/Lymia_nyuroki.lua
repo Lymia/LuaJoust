@@ -26,7 +26,7 @@ local function rushBody()
   local seed = 12345
   while true do
     seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
-    if seed / (3 * 16) == 0 then p() else m() end
+    if (seed / 3) & 1 == 0 then p() else m() end
   end
 end
 
